@@ -9,7 +9,7 @@ app.use(express.json());
 
 // ============ CACHE PARA EVITAR DUPLICIDADE ============
 const processedCards = new Map();
-const CACHE_TTL = 30000; // 30 segundos
+const CACHE_TTL = 15000; // 15 segundos
 
 // ============ SUPORTE PARA VALIDAÇÃO DO TRELLO ============
 app.head('/webhook', (req, res) => res.sendStatus(200));
@@ -165,7 +165,7 @@ const actions = {
     await new Promise(resolve => setTimeout(resolve, 1000));
     
     const message = formatMessage(
-      '📥 NOVO CARD CRIADO',
+      '📥 NOVO CARD NA ENTRADA',
       `📌 <b>Card:</b> ${card.name}\n📋 <b>Lista:</b> Entrada\n⏰ <b>Prazo:</b> 10 dias\n✅ <b>Checklist:</b> Criado`,
       '📥'
     );
@@ -199,7 +199,7 @@ const actions = {
     
     const message = formatMessage(
       '🛠️ EM ATENDIMENTO',
-      `📌 <b>Card:</b> ${card.name}\n👤 <b>Responsável:</b> Em andamento\n⏳ <b>Status:</b> Atendendo`,
+      `📌 <b>Card:</b> ${card.name}\n👤 <b>Status:</b> Em andamento\n⏳ <b>Ação:</b> Atendendo`,
       '🛠️'
     );
     await sendNotification(message);
@@ -301,75 +301,63 @@ app.post('/webhook', async (req, res) => {
     
     const { action } = req.body;
     
-    const processCard = async (card, eventType, listName) => {
-      const cacheKey = `${card.id}-${listName}`;
+    const processCard = async (card, eventType, listName, cardId) => {
+      // Usar o cardId real para o cache
+      const cacheKey = `${cardId}-${listName}`;
       const now = Date.now();
       
+      // Verificar se já processou este card nesta lista
       if (processedCards.has(cacheKey)) {
         const lastProcessed = processedCards.get(cacheKey);
         if (now - lastProcessed < CACHE_TTL) {
           console.log(`⏭️ Ignorando duplicado: "${card.name}" na lista "${listName}"`);
-          return;
+          return false; // Não processar
         }
       }
       
+      // Marcar como processado
       processedCards.set(cacheKey, now);
-      
-      let attempts = 0;
-      const maxAttempts = 3;
-      
-      while (attempts < maxAttempts) {
-        try {
-          console.log(`🔄 Tentativa ${attempts + 1} para o card "${card.name}"`);
-          
-          const delay = 2000 * (attempts + 1);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          
-          const fullCard = await getCard(card.id);
-          console.log(`✅ Card obtido: "${fullCard.name}"`);
-          
-          if (actions[listName]) {
-            await actions[listName](fullCard);
-            console.log(`✅ Automação executada para: ${listName} -> ${fullCard.name}`);
-          } else {
-            console.log(`ℹ️ Nenhuma automação para: "${listName}"`);
-          }
-          
-          return;
-        } catch (error) {
-          attempts++;
-          console.log(`⚠️ Erro na tentativa ${attempts}:`, error.message);
-          
-          if (error.response?.status === 429) {
-            console.log(`⏳ Rate limit! Aguardando...`);
-            await new Promise(resolve => setTimeout(resolve, 2000 * (attempts + 1) * 2));
-          }
-          
-          if (attempts >= maxAttempts) {
-            console.error(`❌ Falha ao processar card após ${maxAttempts} tentativas:`, error.message);
-          }
-        }
-      }
+      console.log(`✅ Processando: "${card.name}" na lista "${listName}"`);
+      return true; // Processar
     };
     
+    // CRIAR CARD
     if (action?.type === 'createCard' && action?.data?.card) {
       const card = action.data.card;
       const listAfter = action?.data?.list;
       const listName = listAfter?.name || 'Desconhecida';
       
       console.log(`📋 Card criado: "${card.name}" na lista "${listName}"`);
-      await processCard(card, 'Card criado', listName);
+      const shouldProcess = await processCard(card, 'Card criado', listName, card.id);
+      
+      if (shouldProcess) {
+        await actions[listName]?.(card);
+      }
     }
     
+    // MOVER CARD
     if (action?.type === 'updateCard' && action?.data?.card) {
       const card = action.data.card;
       const listAfter = action?.data?.listAfter;
       const listBefore = action?.data?.listBefore;
       
+      // Só processa se mudou de lista
       if (listAfter && listBefore && listAfter.id !== listBefore.id) {
         const listName = listAfter.name;
         console.log(`📋 Card movido: "${card.name}" -> "${listName}"`);
-        await processCard(card, 'Card movido', listName);
+        console.log(`📋 De: "${listBefore.name}" -> Para: "${listAfter.name}"`);
+        
+        const shouldProcess = await processCard(card, 'Card movido', listName, card.id);
+        
+        if (shouldProcess) {
+          // Buscar o card completo antes de processar
+          try {
+            const fullCard = await getCard(card.id);
+            await actions[listName]?.(fullCard);
+          } catch (error) {
+            console.error(`❌ Erro ao processar card "${card.name}":`, error.message);
+          }
+        }
       } else {
         console.log(`⏭️ Ignorando updateCard sem mudança de lista para "${card.name}"`);
       }
