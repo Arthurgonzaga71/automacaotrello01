@@ -190,6 +190,23 @@ app.post('/webhook', async (req, res) => {
     
     const { action, model } = req.body;
     
+    // Processar quando um card é CRIADO
+    if (action?.type === 'createCard' && action?.data?.card) {
+      const card = action.data.card;
+      const listResponse = await trelloApi(`/lists/${card.idList}`);
+      const listName = listResponse.data.name;
+      
+      console.log(`📋 Card criado na lista: "${listName}"`);
+      
+      if (actions[listName]) {
+        await actions[listName](card);
+        console.log(`✅ Automação executada para: ${listName} -> ${card.name}`);
+      } else {
+        console.log(`ℹ️ Nenhuma automação configurada para a lista: "${listName}"`);
+      }
+    }
+    
+    // Processar quando um card é MOVIDO (updateCard)
     if (action?.type === 'updateCard' && model?.id) {
       const card = await getCard(model.id);
       const listResponse = await trelloApi(`/lists/${card.idList}`);
