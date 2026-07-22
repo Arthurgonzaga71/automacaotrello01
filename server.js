@@ -12,9 +12,9 @@ app.head('/webhook', (req, res) => res.sendStatus(200));
 
 // ============ CONFIG ============
 const TRELLO = {
-  key: process.env.TRELLO_KEY,
-  token: process.env.TRELLO_TOKEN,
-  boardId: process.env.BOARD_ID,
+  key: process.env.TRELLO_KEY,      // <-- TEM QUE SER process.env.TRELLO_KEY
+  token: process.env.TRELLO_TOKEN,   // <-- TEM QUE SER process.env.TRELLO_TOKEN
+  boardId: process.env.BOARD_ID,     // <-- TEM QUE SER process.env.BOARD_ID
   base: 'https://api.trello.com/1'
 };
 
