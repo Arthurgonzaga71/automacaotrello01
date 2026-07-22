@@ -192,40 +192,61 @@ app.post('/webhook', async (req, res) => {
     
     const { action } = req.body;
     
+    // Função para processar o card com retry
+    const processCard = async (card, eventType) => {
+      let attempts = 0;
+      const maxAttempts = 3;
+      
+      while (attempts < maxAttempts) {
+        try {
+          console.log(`🔄 Tentativa ${attempts + 1} para o card "${card.name}"`);
+          
+          // Aguardar entre tentativas
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempts + 1)));
+          
+          // Buscar o card completo
+          const fullCard = await getCard(card.id);
+          console.log(`✅ Card obtido: "${fullCard.name}"`);
+          
+          const listResponse = await trelloApi(`/lists/${fullCard.idList}`);
+          const listName = listResponse.data.name;
+          
+          console.log(`📋 ${eventType} na lista: "${listName}"`);
+          
+          if (actions[listName]) {
+            await actions[listName](fullCard);
+            console.log(`✅ Automação executada para: ${listName} -> ${fullCard.name}`);
+          } else {
+            console.log(`ℹ️ Nenhuma automação para: "${listName}"`);
+          }
+          
+          return;
+        } catch (error) {
+          attempts++;
+          console.log(`⚠️ Erro na tentativa ${attempts}:`, error.message);
+          
+          if (attempts >= maxAttempts) {
+            console.error(`❌ Falha ao processar card após ${maxAttempts} tentativas:`, error.message);
+            if (error.response) {
+              console.error('❌ Detalhes:', error.response.data);
+            }
+          }
+        }
+      }
+    };
+    
     // Criar card
     if (action?.type === 'createCard' && action?.data?.card) {
       const card = action.data.card;
       console.log(`📋 Card criado: "${card.name}" (ID: ${card.id})`);
-      
-      const listResponse = await trelloApi(`/lists/${card.idList}`);
-      const listName = listResponse.data.name;
-      
-      console.log(`📋 Card criado na lista: "${listName}"`);
-      
-      if (actions[listName]) {
-        await actions[listName](card);
-        console.log(`✅ Automação executada para: ${listName} -> ${card.name}`);
-      } else {
-        console.log(`ℹ️ Nenhuma automação para: "${listName}"`);
-      }
+      await processCard(card, 'Card criado');
     }
     
     // Mover card
     if (action?.type === 'updateCard' && action?.data?.card) {
       const card = action.data.card;
       console.log(`📋 Card movido: "${card.name}" (ID: ${card.id})`);
-      
-      const listResponse = await trelloApi(`/lists/${card.idList}`);
-      const listName = listResponse.data.name;
-      
-      console.log(`📋 Card movido para lista: "${listName}"`);
-      
-      if (actions[listName]) {
-        await actions[listName](card);
-        console.log(`✅ Automação executada para: ${listName} -> ${card.name}`);
-      } else {
-        console.log(`ℹ️ Nenhuma automação para: "${listName}"`);
-      }
+      await processCard(card, 'Card movido');
     }
     
     res.sendStatus(200);
