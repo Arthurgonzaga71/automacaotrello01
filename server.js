@@ -47,7 +47,7 @@ const sendNotification = async (message) => {
   }
   
   if (NOTIFICATIONS.email) {
-    console.log(`📧 Email would be sent: ${message}`);
+    console.log(`📧 Email seria enviado: ${message}`);
   }
   
   const results = await Promise.allSettled(promises);
@@ -76,19 +76,21 @@ const addComment = async (cardId, text) => {
 
 const addLabel = async (cardId, labelName) => {
   try {
+    console.log(`🏷️ Adicionando etiqueta "${labelName}" ao card ${cardId}`);
     const { data: labels } = await trelloApi(`/boards/${TRELLO.boardId}/labels`);
     const label = labels.find(l => l.name === labelName);
-    if (label) {
-      const currentLabels = (await getCard(cardId)).idLabels || [];
-      if (!currentLabels.includes(label.id)) {
-        await trelloApi(`/cards/${cardId}/idLabels`, 'POST', { value: label.id });
-        console.log(`✅ Etiqueta "${labelName}" adicionada`);
-      }
-    } else {
+    if (!label) {
       console.log(`⚠️ Etiqueta "${labelName}" não encontrada`);
+      return;
+    }
+    const card = await getCard(cardId);
+    const currentLabels = card.idLabels || [];
+    if (!currentLabels.includes(label.id)) {
+      await trelloApi(`/cards/${cardId}/idLabels`, 'POST', { value: label.id });
+      console.log(`✅ Etiqueta "${labelName}" adicionada`);
     }
   } catch (error) {
-    console.error(`Erro ao adicionar etiqueta "${labelName}":`, error.message);
+    console.error(`❌ Erro ao adicionar etiqueta "${labelName}":`, error.message);
   }
 };
 
@@ -102,7 +104,7 @@ const removeLabel = async (cardId, labelName) => {
       console.log(`✅ Etiqueta "${labelName}" removida`);
     }
   } catch (error) {
-    console.error(`Erro ao remover etiqueta "${labelName}":`, error.message);
+    console.error(`❌ Erro ao remover etiqueta "${labelName}":`, error.message);
   }
 };
 
@@ -178,7 +180,7 @@ const actions = {
       await addComment(card.id, '✅ Card concluído com sucesso!');
       await sendNotification(`✅ Card "${card.name}" foi concluído!`);
     } catch (error) {
-      console.error('Erro ao concluir checklist:', error.message);
+      console.error('❌ Erro ao concluir checklist:', error.message);
     }
   }
 };
@@ -188,11 +190,13 @@ app.post('/webhook', async (req, res) => {
   try {
     console.log('📨 Webhook recebido:', req.body.action?.type);
     
-    const { action, model } = req.body;
+    const { action } = req.body;
     
-    // Processar quando um card é CRIADO
+    // Criar card
     if (action?.type === 'createCard' && action?.data?.card) {
       const card = action.data.card;
+      console.log(`📋 Card criado: "${card.name}" (ID: ${card.id})`);
+      
       const listResponse = await trelloApi(`/lists/${card.idList}`);
       const listName = listResponse.data.name;
       
@@ -202,13 +206,15 @@ app.post('/webhook', async (req, res) => {
         await actions[listName](card);
         console.log(`✅ Automação executada para: ${listName} -> ${card.name}`);
       } else {
-        console.log(`ℹ️ Nenhuma automação configurada para a lista: "${listName}"`);
+        console.log(`ℹ️ Nenhuma automação para: "${listName}"`);
       }
     }
     
-    // Processar quando um card é MOVIDO (updateCard)
-    if (action?.type === 'updateCard' && model?.id) {
-      const card = await getCard(model.id);
+    // Mover card
+    if (action?.type === 'updateCard' && action?.data?.card) {
+      const card = action.data.card;
+      console.log(`📋 Card movido: "${card.name}" (ID: ${card.id})`);
+      
       const listResponse = await trelloApi(`/lists/${card.idList}`);
       const listName = listResponse.data.name;
       
@@ -218,13 +224,16 @@ app.post('/webhook', async (req, res) => {
         await actions[listName](card);
         console.log(`✅ Automação executada para: ${listName} -> ${card.name}`);
       } else {
-        console.log(`ℹ️ Nenhuma automação configurada para a lista: "${listName}"`);
+        console.log(`ℹ️ Nenhuma automação para: "${listName}"`);
       }
     }
     
     res.sendStatus(200);
   } catch (error) {
     console.error('❌ Erro no webhook:', error.message);
+    if (error.response) {
+      console.error('❌ Detalhes:', error.response.data);
+    }
     res.sendStatus(500);
   }
 });
@@ -257,10 +266,10 @@ cron.schedule('0 8 * * *', async () => {
       await sendNotification(report);
       console.log(`📊 Relatório enviado com ${issues.length} itens`);
     } else {
-      console.log('✅ Nenhum problema encontrado no relatório diário');
+      console.log('✅ Nenhum problema encontrado');
     }
   } catch (error) {
-    console.error('❌ Erro no relatório diário:', error.message);
+    console.error('❌ Erro no relatório:', error.message);
   }
 });
 
