@@ -7,6 +7,9 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 
+// ============ SUPORTE PARA VALIDAÇÃO DO TRELLO ============
+app.head('/webhook', (req, res) => res.sendStatus(200));
+
 // ============ CONFIG ============
 const TRELLO = {
   key: process.env.TRELLO_KEY,
@@ -28,6 +31,7 @@ const trelloApi = (endpoint, method = 'GET', data = null) => {
 };
 
 const sendNotification = async (message) => {
+  console.log(`📤 Enviando notificação: ${message}`);
   const promises = [];
   
   if (NOTIFICATIONS.discord) {
@@ -110,13 +114,11 @@ const actions = {
     await updateCard(card.id, { 
       due: new Date(Date.now() + 10 * 86400000).toISOString() 
     });
-    // Criar checklist padrão
     await trelloApi(`/cards/${card.id}/checklists`, 'POST', { 
       name: 'Checklist Padrão',
       idCard: card.id
     });
     await addComment(card.id, '📥 Card criado com checklist padrão e prazo de 10 dias.');
-    // Cor de capa aleatória
     const colors = ['green', 'yellow', 'orange', 'red', 'purple', 'blue', 'pink'];
     await updateCard(card.id, { 
       cover: { color: colors[Math.floor(Math.random() * colors.length)] } 
@@ -220,17 +222,12 @@ cron.schedule('0 8 * * *', async () => {
     const now = new Date();
     
     for (const card of cards) {
-      // Verificar cartões vencidos
       if (card.due && new Date(card.due) < now) {
         issues.push(`🔴 Vencido: ${card.name} (${new Date(card.due).toLocaleDateString('pt-BR')})`);
       }
-      
-      // Verificar cartões sem responsável
       if (!card.idMembers?.length) {
         issues.push(`⚠️ Sem responsável: ${card.name}`);
       }
-      
-      // Verificar cartões parados (sem atividade há 7 dias)
       const lastActivity = new Date(card.dateLastActivity);
       const daysInactive = Math.floor((now - lastActivity) / (1000 * 60 * 60 * 24));
       if (daysInactive >= 7) {
@@ -295,7 +292,6 @@ app.listen(PORT, () => {
   console.log(`📨 Test notification: http://localhost:${PORT}/test-notification`);
 });
 
-// ============ ERROR HANDLING ============
 process.on('unhandledRejection', (error) => {
   console.error('❌ Unhandled Rejection:', error.message);
 });
