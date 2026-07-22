@@ -108,7 +108,7 @@ const removeLabel = async (cardId, labelName) => {
 
 // ============ ACTIONS ============
 const actions = {
-  'Entrada': async (card) => {
+  '📥 Entrada': async (card) => {
     console.log(`📥 Processando card "${card.name}" na lista Entrada`);
     await addLabel(card.id, 'Novo');
     await updateCard(card.id, { 
@@ -126,47 +126,47 @@ const actions = {
     await sendNotification(`📥 Novo card criado: "${card.name}" com prazo de 10 dias`);
   },
   
-  'Para Tratar Hoje': async (card) => {
+  '🔥 Para Tratar Hoje': async (card) => {
     console.log(`🔥 Processando card "${card.name}" na lista Para Tratar Hoje`);
     await updateCard(card.id, { due: new Date().toISOString() });
     await addComment(card.id, '🔥 Este card deve ser tratado hoje!');
     await sendNotification(`🔥 Card "${card.name}" precisa ser tratado hoje!`);
   },
   
-  'Em Atendimento': async (card) => {
+  '🛠️ Em Atendimento': async (card) => {
     console.log(`🛠️ Processando card "${card.name}" na lista Em Atendimento`);
     await removeLabel(card.id, 'Novo');
     await addLabel(card.id, 'Em Atendimento');
     await addComment(card.id, '🛠️ Em atendimento agora.');
   },
   
-  'Com Desenvolvimento': async (card) => {
+  '👨‍💻 Com Desenvolvimento': async (card) => {
     console.log(`👨‍💻 Processando card "${card.name}" na lista Com Desenvolvimento`);
     await addLabel(card.id, 'Desenvolvimento');
     await addComment(card.id, '👨‍💻 Em desenvolvimento.');
     await sendNotification(`👨‍💻 Card "${card.name}" entrou em desenvolvimento.`);
   },
   
-  'Aguardando Cliente': async (card) => {
+  '⏳ Aguardando Cliente': async (card) => {
     console.log(`⏳ Processando card "${card.name}" na lista Aguardando Cliente`);
     await addLabel(card.id, 'Cliente');
     await addComment(card.id, '⏳ Aguardando retorno do cliente.');
   },
   
-  'Impedimentos': async (card) => {
+  '🚧 Impedimentos': async (card) => {
     console.log(`🚧 Processando card "${card.name}" na lista Impedimentos`);
     await addLabel(card.id, 'Bloqueado');
     await addComment(card.id, '🚧 Card bloqueado por impedimento.');
     await sendNotification(`🚨 ALERTA: Card "${card.name}" está bloqueado!`);
   },
   
-  'Tarefas Internas': async (card) => {
+  '📝 Tarefas Internas': async (card) => {
     console.log(`📝 Processando card "${card.name}" na lista Tarefas Internas`);
     await addLabel(card.id, 'Interno');
     await addComment(card.id, '📝 Tarefa interna.');
   },
   
-  'Concluído': async (card) => {
+  '✅ Concluído': async (card) => {
     console.log(`✅ Processando card "${card.name}" na lista Concluído`);
     try {
       const checklists = await trelloApi(`/cards/${card.id}/checklists`);
