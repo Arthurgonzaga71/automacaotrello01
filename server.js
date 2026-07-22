@@ -8,8 +8,8 @@ const app = express();
 app.use(express.json());
 
 // ============ CACHE PARA EVITAR DUPLICIDADE ============
-const processedCards = new Map(); // Armazena { cardId: timestamp }
-const CACHE_TTL = 5000; // 5 segundos - ignora eventos duplicados neste período
+const processedCards = new Map();
+const CACHE_TTL = 5000;
 
 // ============ SUPORTE PARA VALIDAÇÃO DO TRELLO ============
 app.head('/webhook', (req, res) => res.sendStatus(200));
@@ -94,8 +94,6 @@ const addLabel = async (cardId, labelName) => {
     if (!currentLabels.includes(label.id)) {
       await trelloApi(`/cards/${cardId}/idLabels`, 'POST', { value: label.id });
       console.log(`✅ Etiqueta "${labelName}" adicionada`);
-    } else {
-      console.log(`ℹ️ Etiqueta "${labelName}" já existe no card`);
     }
   } catch (error) {
     if (error.response?.status === 429) {
@@ -131,6 +129,7 @@ const removeLabel = async (cardId, labelName) => {
 };
 
 // ============ ACTIONS ============
+// CADA AÇÃO AGORA ENVIA NOTIFICAÇÃO NO TELEGRAM
 const actions = {
   '📥 Entrada': async (card) => {
     console.log(`📥 Processando card "${card.name}" na lista Entrada`);
@@ -153,7 +152,8 @@ const actions = {
       cover: { color: colors[Math.floor(Math.random() * colors.length)] } 
     });
     await new Promise(resolve => setTimeout(resolve, 1000));
-    await sendNotification(`📥 Novo card criado: "${card.name}" com prazo de 10 dias`);
+    // NOTIFICAÇÃO
+    await sendNotification(`📥 Card "${card.name}" foi criado na lista Entrada com prazo de 10 dias`);
   },
   
   '🔥 Para Tratar Hoje': async (card) => {
@@ -163,7 +163,8 @@ const actions = {
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🔥 Este card deve ser tratado hoje!');
     await new Promise(resolve => setTimeout(resolve, 1000));
-    await sendNotification(`🔥 Card "${card.name}" precisa ser tratado hoje!`);
+    // NOTIFICAÇÃO
+    await sendNotification(`🔥 Card "${card.name}" foi movido para Para Tratar Hoje!`);
   },
   
   '🛠️ Em Atendimento': async (card) => {
@@ -174,6 +175,8 @@ const actions = {
     await addLabel(card.id, 'Tratando');
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🛠️ Em atendimento agora.');
+    // NOTIFICAÇÃO
+    await sendNotification(`🛠️ Card "${card.name}" está em atendimento!`);
   },
   
   '👨‍💻 Com Desenvolvimento': async (card) => {
@@ -183,7 +186,7 @@ const actions = {
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '👨‍💻 Em desenvolvimento.');
     await new Promise(resolve => setTimeout(resolve, 1000));
-    await sendNotification(`👨‍💻 Card "${card.name}" entrou em desenvolvimento.`);
+    await sendNotification(`👨‍💻 Card "${card.name}" entrou em desenvolvimento!`);
   },
   
   '⏳ Aguardando Cliente': async (card) => {
@@ -192,6 +195,7 @@ const actions = {
     await addLabel(card.id, 'Cliente');
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '⏳ Aguardando retorno do cliente.');
+    await sendNotification(`⏳ Card "${card.name}" aguardando retorno do cliente.`);
   },
   
   '🚧 Impedimentos': async (card) => {
@@ -210,6 +214,7 @@ const actions = {
     await addLabel(card.id, 'Interno');
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '📝 Tarefa interna.');
+    await sendNotification(`📝 Card "${card.name}" movido para Tarefas Internas.`);
   },
   
   '✅ Concluído': async (card) => {
@@ -253,7 +258,6 @@ app.post('/webhook', async (req, res) => {
         }
       }
       
-      // MARCAR COMO PROCESSADO
       processedCards.set(cacheKey, now);
       
       let attempts = 0;
@@ -287,7 +291,7 @@ app.post('/webhook', async (req, res) => {
           console.log(`⚠️ Erro na tentativa ${attempts}:`, error.message);
           
           if (error.response?.status === 429) {
-            console.log(`⏳ Rate limit! Aguardando ${2000 * (attempts + 1) * 2}ms...`);
+            console.log(`⏳ Rate limit! Aguardando...`);
             await new Promise(resolve => setTimeout(resolve, 2000 * (attempts + 1) * 2));
           }
           
@@ -323,7 +327,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ============ LIMPAR CACHE PERIODICAMENTE ============
+// ============ LIMPAR CACHE ============
 setInterval(() => {
   const now = Date.now();
   for (const [key, timestamp] of processedCards) {
@@ -331,40 +335,43 @@ setInterval(() => {
       processedCards.delete(key);
     }
   }
-}, 10000); // Limpar a cada 10 segundos
+}, 10000);
 
-// ============ CRON (Daily 8AM) ============
+// ============ CRON - VERIFICAR PRAZOS ============
 cron.schedule('0 8 * * *', async () => {
-  console.log('🔄 Executando relatório diário...');
+  console.log('🔄 Verificando prazos...');
   
   try {
     const { data: cards } = await trelloApi(`/boards/${TRELLO.boardId}/cards`);
-    const issues = [];
     const now = new Date();
+    const upcoming = [];
+    const overdue = [];
     
     for (const card of cards) {
-      if (card.due && new Date(card.due) < now) {
-        issues.push(`🔴 Vencido: ${card.name} (${new Date(card.due).toLocaleDateString('pt-BR')})`);
-      }
-      if (!card.idMembers?.length) {
-        issues.push(`⚠️ Sem responsável: ${card.name}`);
-      }
-      const lastActivity = new Date(card.dateLastActivity);
-      const daysInactive = Math.floor((now - lastActivity) / (1000 * 60 * 60 * 24));
-      if (daysInactive >= 7) {
-        issues.push(`⏸️ Parado há ${daysInactive} dias: ${card.name}`);
+      if (card.due) {
+        const dueDate = new Date(card.due);
+        const diffDays = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+        
+        if (diffDays < 0) {
+          overdue.push(`🔴 VENCIDO: ${card.name} (${Math.abs(diffDays)} dias atrás)`);
+        } else if (diffDays <= 3) {
+          upcoming.push(`⏰ Prazo próximo: ${card.name} (em ${diffDays} dias)`);
+        }
       }
     }
     
-    if (issues.length) {
-      const report = `📊 RELATÓRIO DIÁRIO\n\n${issues.join('\n')}`;
-      await sendNotification(report);
-      console.log(`📊 Relatório enviado com ${issues.length} itens`);
-    } else {
-      console.log('✅ Nenhum problema encontrado');
+    if (overdue.length > 0 || upcoming.length > 0) {
+      let message = '📊 ALERTAS DE PRAZO\n\n';
+      if (overdue.length > 0) {
+        message += '🚨 VENCIDOS:\n' + overdue.join('\n') + '\n\n';
+      }
+      if (upcoming.length > 0) {
+        message += '⚠️ PRÓXIMOS:\n' + upcoming.join('\n');
+      }
+      await sendNotification(message);
     }
   } catch (error) {
-    console.error('❌ Erro no relatório:', error.message);
+    console.error('❌ Erro ao verificar prazos:', error.message);
   }
 });
 
