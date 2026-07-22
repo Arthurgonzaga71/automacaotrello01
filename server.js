@@ -7,6 +7,10 @@ require('dotenv').config();
 const app = express();
 app.use(express.json());
 
+// ============ CACHE PARA EVITAR DUPLICIDADE ============
+const processedCards = new Map(); // Armazena { cardId: timestamp }
+const CACHE_TTL = 5000; // 5 segundos - ignora eventos duplicados neste período
+
 // ============ SUPORTE PARA VALIDAÇÃO DO TRELLO ============
 app.head('/webhook', (req, res) => res.sendStatus(200));
 
@@ -127,7 +131,6 @@ const removeLabel = async (cardId, labelName) => {
 };
 
 // ============ ACTIONS ============
-// ATENÇÃO: As etiquetas foram ajustadas para as que existem no seu board
 const actions = {
   '📥 Entrada': async (card) => {
     console.log(`📥 Processando card "${card.name}" na lista Entrada`);
@@ -163,13 +166,12 @@ const actions = {
     await sendNotification(`🔥 Card "${card.name}" precisa ser tratado hoje!`);
   },
   
-  // Usando 'Tratando' em vez de 'Em Atendimento'
   '🛠️ Em Atendimento': async (card) => {
     console.log(`🛠️ Processando card "${card.name}" na lista Em Atendimento`);
     await new Promise(resolve => setTimeout(resolve, 1000));
     await removeLabel(card.id, 'Novo');
     await new Promise(resolve => setTimeout(resolve, 1000));
-    await addLabel(card.id, 'Tratando');  // <-- USANDO ETIQUETA EXISTENTE
+    await addLabel(card.id, 'Tratando');
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🛠️ Em atendimento agora.');
   },
@@ -239,6 +241,21 @@ app.post('/webhook', async (req, res) => {
     const { action } = req.body;
     
     const processCard = async (card, eventType) => {
+      // VERIFICAR SE O CARD JÁ FOI PROCESSADO RECENTEMENTE
+      const cacheKey = `${card.id}-${eventType}`;
+      const now = Date.now();
+      
+      if (processedCards.has(cacheKey)) {
+        const lastProcessed = processedCards.get(cacheKey);
+        if (now - lastProcessed < CACHE_TTL) {
+          console.log(`⏭️ Ignorando evento duplicado para "${card.name}" (${eventType})`);
+          return;
+        }
+      }
+      
+      // MARCAR COMO PROCESSADO
+      processedCards.set(cacheKey, now);
+      
       let attempts = 0;
       const maxAttempts = 3;
       
@@ -305,6 +322,16 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+// ============ LIMPAR CACHE PERIODICAMENTE ============
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of processedCards) {
+    if (now - timestamp > CACHE_TTL) {
+      processedCards.delete(key);
+    }
+  }
+}, 10000); // Limpar a cada 10 segundos
 
 // ============ CRON (Daily 8AM) ============
 cron.schedule('0 8 * * *', async () => {
