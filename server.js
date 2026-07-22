@@ -12,9 +12,9 @@ app.head('/webhook', (req, res) => res.sendStatus(200));
 
 // ============ CONFIG ============
 const TRELLO = {
-  key: process.env.TRELLO_KEY,      // <-- TEM QUE SER process.env.TRELLO_KEY
-  token: process.env.TRELLO_TOKEN,   // <-- TEM QUE SER process.env.TRELLO_TOKEN
-  boardId: process.env.BOARD_ID,     // <-- TEM QUE SER process.env.BOARD_ID
+  key: process.env.TRELLO_KEY,
+  token: process.env.TRELLO_TOKEN,
+  boardId: process.env.BOARD_ID,
   base: 'https://api.trello.com/1'
 };
 
@@ -76,6 +76,9 @@ const addComment = async (cardId, text) => {
 
 const addLabel = async (cardId, labelName) => {
   try {
+    // Delay para evitar rate limit
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
     console.log(`🏷️ Adicionando etiqueta "${labelName}" ao card ${cardId}`);
     const { data: labels } = await trelloApi(`/boards/${TRELLO.boardId}/labels`);
     const label = labels.find(l => l.name === labelName);
@@ -88,14 +91,26 @@ const addLabel = async (cardId, labelName) => {
     if (!currentLabels.includes(label.id)) {
       await trelloApi(`/cards/${cardId}/idLabels`, 'POST', { value: label.id });
       console.log(`✅ Etiqueta "${labelName}" adicionada`);
+    } else {
+      console.log(`ℹ️ Etiqueta "${labelName}" já existe no card`);
     }
   } catch (error) {
-    console.error(`❌ Erro ao adicionar etiqueta "${labelName}":`, error.message);
+    if (error.response?.status === 429) {
+      console.log(`⏳ Rate limit ao adicionar etiqueta, aguardando...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Tentar novamente
+      await addLabel(cardId, labelName);
+    } else {
+      console.error(`❌ Erro ao adicionar etiqueta "${labelName}":`, error.message);
+    }
   }
 };
 
 const removeLabel = async (cardId, labelName) => {
   try {
+    // Delay para evitar rate limit
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
     const card = await getCard(cardId);
     const { data: labels } = await trelloApi(`/boards/${TRELLO.boardId}/labels`);
     const label = labels.find(l => l.name === labelName);
@@ -104,7 +119,14 @@ const removeLabel = async (cardId, labelName) => {
       console.log(`✅ Etiqueta "${labelName}" removida`);
     }
   } catch (error) {
-    console.error(`❌ Erro ao remover etiqueta "${labelName}":`, error.message);
+    if (error.response?.status === 429) {
+      console.log(`⏳ Rate limit ao remover etiqueta, aguardando...`);
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Tentar novamente
+      await removeLabel(cardId, labelName);
+    } else {
+      console.error(`❌ Erro ao remover etiqueta "${labelName}":`, error.message);
+    }
   }
 };
 
@@ -112,72 +134,98 @@ const removeLabel = async (cardId, labelName) => {
 const actions = {
   '📥 Entrada': async (card) => {
     console.log(`📥 Processando card "${card.name}" na lista Entrada`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addLabel(card.id, 'Novo');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await updateCard(card.id, { 
       due: new Date(Date.now() + 10 * 86400000).toISOString() 
     });
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await trelloApi(`/cards/${card.id}/checklists`, 'POST', { 
       name: 'Checklist Padrão',
       idCard: card.id
     });
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '📥 Card criado com checklist padrão e prazo de 10 dias.');
     const colors = ['green', 'yellow', 'orange', 'red', 'purple', 'blue', 'pink'];
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await updateCard(card.id, { 
       cover: { color: colors[Math.floor(Math.random() * colors.length)] } 
     });
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await sendNotification(`📥 Novo card criado: "${card.name}" com prazo de 10 dias`);
   },
   
   '🔥 Para Tratar Hoje': async (card) => {
     console.log(`🔥 Processando card "${card.name}" na lista Para Tratar Hoje`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await updateCard(card.id, { due: new Date().toISOString() });
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🔥 Este card deve ser tratado hoje!');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await sendNotification(`🔥 Card "${card.name}" precisa ser tratado hoje!`);
   },
   
   '🛠️ Em Atendimento': async (card) => {
     console.log(`🛠️ Processando card "${card.name}" na lista Em Atendimento`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await removeLabel(card.id, 'Novo');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addLabel(card.id, 'Em Atendimento');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🛠️ Em atendimento agora.');
   },
   
   '👨‍💻 Com Desenvolvimento': async (card) => {
     console.log(`👨‍💻 Processando card "${card.name}" na lista Com Desenvolvimento`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addLabel(card.id, 'Desenvolvimento');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '👨‍💻 Em desenvolvimento.');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await sendNotification(`👨‍💻 Card "${card.name}" entrou em desenvolvimento.`);
   },
   
   '⏳ Aguardando Cliente': async (card) => {
     console.log(`⏳ Processando card "${card.name}" na lista Aguardando Cliente`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addLabel(card.id, 'Cliente');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '⏳ Aguardando retorno do cliente.');
   },
   
   '🚧 Impedimentos': async (card) => {
     console.log(`🚧 Processando card "${card.name}" na lista Impedimentos`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addLabel(card.id, 'Bloqueado');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🚧 Card bloqueado por impedimento.');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await sendNotification(`🚨 ALERTA: Card "${card.name}" está bloqueado!`);
   },
   
   '📝 Tarefas Internas': async (card) => {
     console.log(`📝 Processando card "${card.name}" na lista Tarefas Internas`);
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addLabel(card.id, 'Interno');
+    await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '📝 Tarefa interna.');
   },
   
   '✅ Concluído': async (card) => {
     console.log(`✅ Processando card "${card.name}" na lista Concluído`);
     try {
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const checklists = await trelloApi(`/cards/${card.id}/checklists`);
       for (const checklist of checklists.data) {
         for (const item of checklist.checkItems) {
+          await new Promise(resolve => setTimeout(resolve, 500));
           await trelloApi(`/cards/${card.id}/checkItem/${item.id}`, 'PUT', { state: 'complete' });
         }
       }
+      await new Promise(resolve => setTimeout(resolve, 1000));
       await addComment(card.id, '✅ Card concluído com sucesso!');
+      await new Promise(resolve => setTimeout(resolve, 1000));
       await sendNotification(`✅ Card "${card.name}" foi concluído!`);
     } catch (error) {
       console.error('❌ Erro ao concluir checklist:', error.message);
@@ -192,7 +240,7 @@ app.post('/webhook', async (req, res) => {
     
     const { action } = req.body;
     
-    // Função para processar o card com retry
+    // Função para processar o card com retry e delay
     const processCard = async (card, eventType) => {
       let attempts = 0;
       const maxAttempts = 3;
@@ -201,8 +249,9 @@ app.post('/webhook', async (req, res) => {
         try {
           console.log(`🔄 Tentativa ${attempts + 1} para o card "${card.name}"`);
           
-          // Aguardar entre tentativas
-          await new Promise(resolve => setTimeout(resolve, 1000 * (attempts + 1)));
+          // Aguardar entre tentativas (delay progressivo)
+          const delay = 2000 * (attempts + 1);
+          await new Promise(resolve => setTimeout(resolve, delay));
           
           // Buscar o card completo
           const fullCard = await getCard(card.id);
@@ -224,6 +273,11 @@ app.post('/webhook', async (req, res) => {
         } catch (error) {
           attempts++;
           console.log(`⚠️ Erro na tentativa ${attempts}:`, error.message);
+          
+          if (error.response?.status === 429) {
+            console.log(`⏳ Rate limit! Aguardando ${2000 * (attempts + 1) * 2}ms...`);
+            await new Promise(resolve => setTimeout(resolve, 2000 * (attempts + 1) * 2));
+          }
           
           if (attempts >= maxAttempts) {
             console.error(`❌ Falha ao processar card após ${maxAttempts} tentativas:`, error.message);
