@@ -9,7 +9,7 @@ app.use(express.json());
 
 // ============ CACHE PARA EVITAR DUPLICIDADE ============
 const processedCards = new Map();
-const CACHE_TTL = 5000;
+const CACHE_TTL = 30000; // 30 segundos
 
 // ============ SUPORTE PARA VALIDAÇÃO DO TRELLO ============
 app.head('/webhook', (req, res) => res.sendStatus(200));
@@ -34,6 +34,17 @@ const trelloApi = (endpoint, method = 'GET', data = null) => {
   return axios({ method, url, data });
 };
 
+// ============ FUNÇÃO PARA FORMATAR MENSAGENS ============
+const formatMessage = (title, content, emoji) => {
+  const line = '─'.repeat(30);
+  return `
+${emoji} ${title}
+${line}
+${content}
+${line}
+🕐 ${new Date().toLocaleString('pt-BR')}`;
+};
+
 const sendNotification = async (message) => {
   console.log(`📤 Enviando notificação: ${message}`);
   const promises = [];
@@ -46,7 +57,8 @@ const sendNotification = async (message) => {
     const url = `https://api.telegram.org/bot${process.env.TELEGRAM_TOKEN}/sendMessage`;
     promises.push(axios.post(url, { 
       chat_id: process.env.TELEGRAM_CHAT_ID, 
-      text: message 
+      text: message,
+      parse_mode: 'HTML'
     }));
   }
   
@@ -129,7 +141,6 @@ const removeLabel = async (cardId, labelName) => {
 };
 
 // ============ ACTIONS ============
-// CADA AÇÃO AGORA ENVIA NOTIFICAÇÃO NO TELEGRAM
 const actions = {
   '📥 Entrada': async (card) => {
     console.log(`📥 Processando card "${card.name}" na lista Entrada`);
@@ -152,8 +163,13 @@ const actions = {
       cover: { color: colors[Math.floor(Math.random() * colors.length)] } 
     });
     await new Promise(resolve => setTimeout(resolve, 1000));
-    // NOTIFICAÇÃO
-    await sendNotification(`📥 Card "${card.name}" foi criado na lista Entrada com prazo de 10 dias`);
+    
+    const message = formatMessage(
+      '📥 NOVO CARD CRIADO',
+      `📌 <b>Card:</b> ${card.name}\n📋 <b>Lista:</b> Entrada\n⏰ <b>Prazo:</b> 10 dias\n✅ <b>Checklist:</b> Criado`,
+      '📥'
+    );
+    await sendNotification(message);
   },
   
   '🔥 Para Tratar Hoje': async (card) => {
@@ -163,8 +179,13 @@ const actions = {
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🔥 Este card deve ser tratado hoje!');
     await new Promise(resolve => setTimeout(resolve, 1000));
-    // NOTIFICAÇÃO
-    await sendNotification(`🔥 Card "${card.name}" foi movido para Para Tratar Hoje!`);
+    
+    const message = formatMessage(
+      '🔥 PARA TRATAR HOJE',
+      `📌 <b>Card:</b> ${card.name}\n⏰ <b>Vencimento:</b> Hoje\n⚠️ <b>Prioridade:</b> Alta`,
+      '🔥'
+    );
+    await sendNotification(message);
   },
   
   '🛠️ Em Atendimento': async (card) => {
@@ -175,8 +196,13 @@ const actions = {
     await addLabel(card.id, 'Tratando');
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🛠️ Em atendimento agora.');
-    // NOTIFICAÇÃO
-    await sendNotification(`🛠️ Card "${card.name}" está em atendimento!`);
+    
+    const message = formatMessage(
+      '🛠️ EM ATENDIMENTO',
+      `📌 <b>Card:</b> ${card.name}\n👤 <b>Responsável:</b> Em andamento\n⏳ <b>Status:</b> Atendendo`,
+      '🛠️'
+    );
+    await sendNotification(message);
   },
   
   '👨‍💻 Com Desenvolvimento': async (card) => {
@@ -186,7 +212,13 @@ const actions = {
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '👨‍💻 Em desenvolvimento.');
     await new Promise(resolve => setTimeout(resolve, 1000));
-    await sendNotification(`👨‍💻 Card "${card.name}" entrou em desenvolvimento!`);
+    
+    const message = formatMessage(
+      '👨‍💻 EM DESENVOLVIMENTO',
+      `📌 <b>Card:</b> ${card.name}\n💻 <b>Status:</b> Em desenvolvimento\n🔧 <b>Ação:</b> Codificando`,
+      '👨‍💻'
+    );
+    await sendNotification(message);
   },
   
   '⏳ Aguardando Cliente': async (card) => {
@@ -195,7 +227,13 @@ const actions = {
     await addLabel(card.id, 'Cliente');
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '⏳ Aguardando retorno do cliente.');
-    await sendNotification(`⏳ Card "${card.name}" aguardando retorno do cliente.`);
+    
+    const message = formatMessage(
+      '⏳ AGUARDANDO CLIENTE',
+      `📌 <b>Card:</b> ${card.name}\n👤 <b>Cliente:</b> Aguardando retorno\n⏰ <b>Status:</b> Pendente`,
+      '⏳'
+    );
+    await sendNotification(message);
   },
   
   '🚧 Impedimentos': async (card) => {
@@ -205,7 +243,13 @@ const actions = {
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🚧 Card bloqueado por impedimento.');
     await new Promise(resolve => setTimeout(resolve, 1000));
-    await sendNotification(`🚨 ALERTA: Card "${card.name}" está bloqueado!`);
+    
+    const message = formatMessage(
+      '🚨 ALERTA: IMPEDIMENTO',
+      `📌 <b>Card:</b> ${card.name}\n🚧 <b>Status:</b> Bloqueado\n⚠️ <b>Ação:</b> Necessário desbloquear`,
+      '🚨'
+    );
+    await sendNotification(message);
   },
   
   '📝 Tarefas Internas': async (card) => {
@@ -214,7 +258,13 @@ const actions = {
     await addLabel(card.id, 'Interno');
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '📝 Tarefa interna.');
-    await sendNotification(`📝 Card "${card.name}" movido para Tarefas Internas.`);
+    
+    const message = formatMessage(
+      '📝 TAREFA INTERNA',
+      `📌 <b>Card:</b> ${card.name}\n🏢 <b>Tipo:</b> Interna\n📋 <b>Status:</b> Em andamento`,
+      '📝'
+    );
+    await sendNotification(message);
   },
   
   '✅ Concluído': async (card) => {
@@ -231,7 +281,13 @@ const actions = {
       await new Promise(resolve => setTimeout(resolve, 1000));
       await addComment(card.id, '✅ Card concluído com sucesso!');
       await new Promise(resolve => setTimeout(resolve, 1000));
-      await sendNotification(`✅ Card "${card.name}" foi concluído!`);
+      
+      const message = formatMessage(
+        '✅ CARD CONCLUÍDO',
+        `📌 <b>Card:</b> ${card.name}\n🎯 <b>Status:</b> Finalizado\n✅ <b>Checklist:</b> Completo`,
+        '✅'
+      );
+      await sendNotification(message);
     } catch (error) {
       console.error('❌ Erro ao concluir checklist:', error.message);
     }
@@ -245,15 +301,14 @@ app.post('/webhook', async (req, res) => {
     
     const { action } = req.body;
     
-    const processCard = async (card, eventType) => {
-      // VERIFICAR SE O CARD JÁ FOI PROCESSADO RECENTEMENTE
-      const cacheKey = `${card.id}-${eventType}`;
+    const processCard = async (card, eventType, listName) => {
+      const cacheKey = `${card.id}-${listName}`;
       const now = Date.now();
       
       if (processedCards.has(cacheKey)) {
         const lastProcessed = processedCards.get(cacheKey);
         if (now - lastProcessed < CACHE_TTL) {
-          console.log(`⏭️ Ignorando evento duplicado para "${card.name}" (${eventType})`);
+          console.log(`⏭️ Ignorando duplicado: "${card.name}" na lista "${listName}"`);
           return;
         }
       }
@@ -272,11 +327,6 @@ app.post('/webhook', async (req, res) => {
           
           const fullCard = await getCard(card.id);
           console.log(`✅ Card obtido: "${fullCard.name}"`);
-          
-          const listResponse = await trelloApi(`/lists/${fullCard.idList}`);
-          const listName = listResponse.data.name;
-          
-          console.log(`📋 ${eventType} na lista: "${listName}"`);
           
           if (actions[listName]) {
             await actions[listName](fullCard);
@@ -297,9 +347,6 @@ app.post('/webhook', async (req, res) => {
           
           if (attempts >= maxAttempts) {
             console.error(`❌ Falha ao processar card após ${maxAttempts} tentativas:`, error.message);
-            if (error.response) {
-              console.error('❌ Detalhes:', error.response.data);
-            }
           }
         }
       }
@@ -307,14 +354,25 @@ app.post('/webhook', async (req, res) => {
     
     if (action?.type === 'createCard' && action?.data?.card) {
       const card = action.data.card;
-      console.log(`📋 Card criado: "${card.name}" (ID: ${card.id})`);
-      await processCard(card, 'Card criado');
+      const listAfter = action?.data?.list;
+      const listName = listAfter?.name || 'Desconhecida';
+      
+      console.log(`📋 Card criado: "${card.name}" na lista "${listName}"`);
+      await processCard(card, 'Card criado', listName);
     }
     
     if (action?.type === 'updateCard' && action?.data?.card) {
       const card = action.data.card;
-      console.log(`📋 Card movido: "${card.name}" (ID: ${card.id})`);
-      await processCard(card, 'Card movido');
+      const listAfter = action?.data?.listAfter;
+      const listBefore = action?.data?.listBefore;
+      
+      if (listAfter && listBefore && listAfter.id !== listBefore.id) {
+        const listName = listAfter.name;
+        console.log(`📋 Card movido: "${card.name}" -> "${listName}"`);
+        await processCard(card, 'Card movido', listName);
+      } else {
+        console.log(`⏭️ Ignorando updateCard sem mudança de lista para "${card.name}"`);
+      }
     }
     
     res.sendStatus(200);
@@ -335,7 +393,7 @@ setInterval(() => {
       processedCards.delete(key);
     }
   }
-}, 10000);
+}, 5000);
 
 // ============ CRON - VERIFICAR PRAZOS ============
 cron.schedule('0 8 * * *', async () => {
@@ -353,21 +411,27 @@ cron.schedule('0 8 * * *', async () => {
         const diffDays = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
         
         if (diffDays < 0) {
-          overdue.push(`🔴 VENCIDO: ${card.name} (${Math.abs(diffDays)} dias atrás)`);
+          overdue.push(`🔴 ${card.name} (${Math.abs(diffDays)} dias atrás)`);
         } else if (diffDays <= 3) {
-          upcoming.push(`⏰ Prazo próximo: ${card.name} (em ${diffDays} dias)`);
+          upcoming.push(`⏰ ${card.name} (em ${diffDays} dias)`);
         }
       }
     }
     
     if (overdue.length > 0 || upcoming.length > 0) {
-      let message = '📊 ALERTAS DE PRAZO\n\n';
+      let content = '';
       if (overdue.length > 0) {
-        message += '🚨 VENCIDOS:\n' + overdue.join('\n') + '\n\n';
+        content += '🚨 VENCIDOS:\n' + overdue.join('\n') + '\n\n';
       }
       if (upcoming.length > 0) {
-        message += '⚠️ PRÓXIMOS:\n' + upcoming.join('\n');
+        content += '⚠️ PRÓXIMOS:\n' + upcoming.join('\n');
       }
+      
+      const message = formatMessage(
+        '📊 RELATÓRIO DE PRAZOS',
+        content,
+        '📊'
+      );
       await sendNotification(message);
     }
   } catch (error) {
@@ -398,7 +462,12 @@ app.get('/health', (req, res) => {
 
 app.post('/test-notification', async (req, res) => {
   try {
-    await sendNotification('🧪 Test notification from Trello Automation');
+    const message = formatMessage(
+      '🧪 TESTE DE NOTIFICAÇÃO',
+      '✅ Sistema funcionando corretamente!\n📌 Todos os serviços estão ativos.',
+      '🧪'
+    );
+    await sendNotification(message);
     res.json({ 
       success: true, 
       message: 'Notificação enviada com sucesso!' 
