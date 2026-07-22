@@ -76,7 +76,6 @@ const addComment = async (cardId, text) => {
 
 const addLabel = async (cardId, labelName) => {
   try {
-    // Delay para evitar rate limit
     await new Promise(resolve => setTimeout(resolve, 1500));
     
     console.log(`🏷️ Adicionando etiqueta "${labelName}" ao card ${cardId}`);
@@ -98,7 +97,6 @@ const addLabel = async (cardId, labelName) => {
     if (error.response?.status === 429) {
       console.log(`⏳ Rate limit ao adicionar etiqueta, aguardando...`);
       await new Promise(resolve => setTimeout(resolve, 3000));
-      // Tentar novamente
       await addLabel(cardId, labelName);
     } else {
       console.error(`❌ Erro ao adicionar etiqueta "${labelName}":`, error.message);
@@ -108,7 +106,6 @@ const addLabel = async (cardId, labelName) => {
 
 const removeLabel = async (cardId, labelName) => {
   try {
-    // Delay para evitar rate limit
     await new Promise(resolve => setTimeout(resolve, 1500));
     
     const card = await getCard(cardId);
@@ -122,7 +119,6 @@ const removeLabel = async (cardId, labelName) => {
     if (error.response?.status === 429) {
       console.log(`⏳ Rate limit ao remover etiqueta, aguardando...`);
       await new Promise(resolve => setTimeout(resolve, 3000));
-      // Tentar novamente
       await removeLabel(cardId, labelName);
     } else {
       console.error(`❌ Erro ao remover etiqueta "${labelName}":`, error.message);
@@ -131,6 +127,7 @@ const removeLabel = async (cardId, labelName) => {
 };
 
 // ============ ACTIONS ============
+// ATENÇÃO: As etiquetas foram ajustadas para as que existem no seu board
 const actions = {
   '📥 Entrada': async (card) => {
     console.log(`📥 Processando card "${card.name}" na lista Entrada`);
@@ -166,12 +163,13 @@ const actions = {
     await sendNotification(`🔥 Card "${card.name}" precisa ser tratado hoje!`);
   },
   
+  // Usando 'Tratando' em vez de 'Em Atendimento'
   '🛠️ Em Atendimento': async (card) => {
     console.log(`🛠️ Processando card "${card.name}" na lista Em Atendimento`);
     await new Promise(resolve => setTimeout(resolve, 1000));
     await removeLabel(card.id, 'Novo');
     await new Promise(resolve => setTimeout(resolve, 1000));
-    await addLabel(card.id, 'Em Atendimento');
+    await addLabel(card.id, 'Tratando');  // <-- USANDO ETIQUETA EXISTENTE
     await new Promise(resolve => setTimeout(resolve, 1000));
     await addComment(card.id, '🛠️ Em atendimento agora.');
   },
@@ -240,7 +238,6 @@ app.post('/webhook', async (req, res) => {
     
     const { action } = req.body;
     
-    // Função para processar o card com retry e delay
     const processCard = async (card, eventType) => {
       let attempts = 0;
       const maxAttempts = 3;
@@ -249,11 +246,9 @@ app.post('/webhook', async (req, res) => {
         try {
           console.log(`🔄 Tentativa ${attempts + 1} para o card "${card.name}"`);
           
-          // Aguardar entre tentativas (delay progressivo)
           const delay = 2000 * (attempts + 1);
           await new Promise(resolve => setTimeout(resolve, delay));
           
-          // Buscar o card completo
           const fullCard = await getCard(card.id);
           console.log(`✅ Card obtido: "${fullCard.name}"`);
           
@@ -289,14 +284,12 @@ app.post('/webhook', async (req, res) => {
       }
     };
     
-    // Criar card
     if (action?.type === 'createCard' && action?.data?.card) {
       const card = action.data.card;
       console.log(`📋 Card criado: "${card.name}" (ID: ${card.id})`);
       await processCard(card, 'Card criado');
     }
     
-    // Mover card
     if (action?.type === 'updateCard' && action?.data?.card) {
       const card = action.data.card;
       console.log(`📋 Card movido: "${card.name}" (ID: ${card.id})`);
